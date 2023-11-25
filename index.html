@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #f7f7f7;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background-color: #3498db;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+            font-size: 24px;
+        }
+
+        .container {
+            flex: 1;
+            width: 100%;
+            max-width: 600px;
+            background-color: #ffffff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form {
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .form label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .form input,
+        .form select,
+        .form button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .form button {
+            background-color: #3498db;
+            color: #fff;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .form button:hover {
+            background-color: #2980b9;
+        }
+
+        .alert {
+            padding: 10px;
+            background-color: #e74c3c;
+            color: #fff;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .chat {
+            flex: 1;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        .chat p {
+            margin: 0;
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        footer {
+            background-color: #3498db;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        WebSocket Chat
+    </header>
+
+    <div class="container">
+        <div class="form" id="nameStep">
+            <label for="nameInput">Enter your name:</label>
+            <input type="text" id="nameInput">
+            <button onclick="app.enterName()">Next</button>
+        </div>
+
+        <div class="form" id="roomStep" style="display: none;">
+            <label for="roomSelector">Choose a room:</label>
+            <select id="roomSelector">
+                <option value="private">Private Room</option>
+                <option value="group">Group Room</option>
+            </select>
+            <button onclick="app.chooseRoom()">Join Room</button>
+        </div>
+
+        <div class="alert" id="roomFullAlert">Room is full. Please choose another room.</div>
+
+        <div class="chat" id="chatStep" style="display: none;">
+            <form onsubmit="app.doSendMessage(); return false;">
+                <div class="placeholder">
+                    <label>Hello <b class="username"></b>. Say something:</label>
+                </div>
+                <input class="input-message" type="text" placeholder="Enter message">
+                <button type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <footer>
+        © Tugas WebSocket
+    </footer>
+
+    <div id="roomFullAlert" style="color: red; display: none;">Room is full. Please choose another room.</div>
+
+    <script type="text/javascript">
+        var app = {}
+        app.ws = undefined
+        app.container = undefined
+        app.selectedRoom = 'private'
+        app.username = ''
+    
+ 
+        app.privateRoomFull = false
+    
+        app.print = function (message) {
+            var el = document.createElement("p")
+            el.innerHTML = message
+            app.container.append(el)
+        }
+    
+        app.enterName = function () {
+            app.username = document.getElementById('nameInput').value
+            document.querySelector('.username').innerText = app.username
+
+            document.getElementById('nameStep').style.display = 'none'
+            document.getElementById('roomStep').style.display = 'block'
+        }
+    
+        app.chooseRoom = function () {
+            app.selectedRoom = document.getElementById('roomSelector').value
+    
+            app.privateRoomFull = false
+            document.getElementById('roomFullAlert').style.display = 'none'
+    
+            document.getElementById('roomStep').style.display = 'none'
+            document.getElementById('chatStep').style.display = 'block'
+    
+            app.ws = new WebSocket("ws://localhost:8080/ws?username=" + app.username + "&room=" + app.selectedRoom)
+    
+            app.ws.onopen = function () {
+                var message = '<b>me</b>: connected'
+                app.print(message)
+            }
+    
+            app.ws.onmessage = function (event) {
+                var res = JSON.parse(event.data);
+    
+                var message = '';
+                if (res.type === 'NewUser') {
+                    message = 'User <b>' + res.from + '</b>: connected';
+                } else if (res.type === 'Leave') {
+                    message = 'User <b>' + res.from + '</b>: disconnected';
+                } else if (res.type === 'PrivateRoomFull') {
+                    message = '<b>' + res.from + '</b>: ' + res.message;
+                    app.print(message);
+                } else if (res.type === 'Chat') {
+                    message = '<b>' + res.from + '</b>: ' + res.message;
+                    app.print(message);
+                }
+    
+                app.print(message);
+            }
+    
+            app.ws.onclose = function () {
+                var message = '<b>me</b>: disconnected'
+                app.print(message)
+            }
+    
+            // Tambahkan penanganan untuk peringatan jika ruangan private penuh
+            app.ws.onerror = function (error) {
+                if (error.data === 'Room is full') {
+                    app.privateRoomFull = true
+                    document.getElementById('roomFullAlert').style.display = 'block'
+                }
+            }
+        }
+    
+        app.doSendMessage = function () {
+            if (app.privateRoomFull) {
+                alert('Room fulll')
+                return
+            }
+    
+            var messageRaw = document.querySelector('.input-message').value
+            app.ws.send(JSON.stringify({
+                message: messageRaw
+            }));
+    
+            var message = '<b>me</b>: ' + messageRaw
+            app.print(message)
+    
+            document.querySelector('.input-message').value = ''
+        }
+    
+        window.onload = function () {
+            app.container = document.querySelector('.container')
+        }
+    </script>
+</body>
+</html>
